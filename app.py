@@ -328,7 +328,7 @@ def multi_cwt_energy(signal: np.ndarray, fs: float, wavelets):
 
 
 # ============================================================
-# Matrix Profile (compact implementation)
+# Matrix Profile (compact implementation neww)
 # ============================================================
 def z_norm(x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=float)
