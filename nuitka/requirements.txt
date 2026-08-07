@@ -1,0 +1,6 @@
+numpy
+matplotlib
+scipy
+PyWavelets
+reportlab
+PySide6
