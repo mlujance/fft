@@ -5,6 +5,7 @@
 
 import os
 import argparse
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -163,6 +164,39 @@ def compute_run_lengths(bits: np.ndarray):
         one_runs.append(run_len)
 
     return zero_runs, one_runs
+
+
+
+def longest_runs_with_positions(bits: np.ndarray, top_n: int = 15):
+    """Return the longest contiguous runs with value and exact bit positions."""
+    if len(bits) == 0:
+        return []
+
+    runs = []
+    start = 0
+    current = int(bits[0])
+
+    for i in range(1, len(bits)):
+        value = int(bits[i])
+        if value != current:
+            runs.append({
+                "value": current,
+                "length": i - start,
+                "start": start,
+                "end": i - 1,
+            })
+            start = i
+            current = value
+
+    runs.append({
+        "value": current,
+        "length": len(bits) - start,
+        "start": start,
+        "end": len(bits) - 1,
+    })
+
+    runs.sort(key=lambda r: (-r["length"], r["start"]))
+    return runs[:top_n]
 
 
 def transition_matrix(bits: np.ndarray) -> np.ndarray:
@@ -707,6 +741,7 @@ def generate_plots(bits: np.ndarray, fs: float, cwt_wavelet: str, dwt_wavelet: s
     metrics["avg_zero_run"] = safe_mean(zero_runs)
     metrics["avg_one_run"] = safe_mean(one_runs)
     metrics["max_run"] = int(max(all_runs)) if all_runs else 0
+    metrics["longest_runs"] = longest_runs_with_positions(bits, top_n=15)
 
     max_run = max(1, metrics["max_run"])
     bins = np.arange(1, max_run + 2) - 0.5
@@ -1061,6 +1096,84 @@ def make_metrics_table(metrics, styles):
     return table
 
 
+
+def make_longest_runs_table(metrics):
+    """Build a compact table with the 15 longest runs."""
+    rows = [["Rank", "Bit value", "Length", "Start bit", "End bit"]]
+
+    longest_runs = metrics.get("longest_runs", [])
+    for rank, run in enumerate(longest_runs, start=1):
+        rows.append([
+            str(rank),
+            str(run["value"]),
+            str(run["length"]),
+            f'{run["start"]:,}',
+            f'{run["end"]:,}',
+        ])
+
+    if not longest_runs:
+        rows.append(["-", "-", "-", "-", "-"])
+
+    table = Table(
+        rows,
+        colWidths=[1.3 * cm, 2.4 * cm, 2.4 * cm, 4.2 * cm, 4.2 * cm],
+        repeatRows=1,
+        hAlign="LEFT",
+    )
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), REPORT_THEME["primary_color"]),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), REPORT_THEME["title_font"]),
+        ("FONTNAME", (0, 1), (-1, -1), REPORT_THEME["base_font"]),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("BACKGROUND", (0, 1), (-1, -1), REPORT_THEME["background_light"]),
+        ("TEXTCOLOR", (0, 1), (-1, -1), REPORT_THEME["text_color"]),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#B8C4D0")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return table
+
+
+
+def draw_page_header_footer(canvas, doc):
+    """Draw a consistent header and footer on every PDF page."""
+    canvas.saveState()
+
+    page_width, page_height = A4
+    left = doc.leftMargin
+    right = page_width - doc.rightMargin
+
+    # Header
+    header_y = page_height - 0.72 * cm
+    canvas.setStrokeColor(colors.HexColor("#B8C4D0"))
+    canvas.setLineWidth(0.45)
+    canvas.line(left, header_y - 0.16 * cm, right, header_y - 0.16 * cm)
+
+    canvas.setFont(REPORT_THEME["title_font"], 8.2)
+    canvas.setFillColor(REPORT_THEME["primary_color"])
+    canvas.drawString(left, header_y, REPORT_THEME["title"])
+
+    canvas.setFont(REPORT_THEME["base_font"], 7.8)
+    canvas.setFillColor(REPORT_THEME["muted_color"])
+    canvas.drawRightString(right, header_y, f"Page {doc.page}")
+
+    # Footer
+    footer_y = 0.67 * cm
+    canvas.setStrokeColor(colors.HexColor("#B8C4D0"))
+    canvas.line(left, footer_y + 0.22 * cm, right, footer_y + 0.22 * cm)
+
+    canvas.setFont(REPORT_THEME["base_font"], 7.5)
+    canvas.setFillColor(REPORT_THEME["muted_color"])
+    canvas.drawString(left, footer_y, "Automated Binary Analyzer")
+
+    issue_date = datetime.now().strftime("%Y-%m-%d")
+    canvas.drawRightString(right, footer_y, f"Issue date: {issue_date}")
+
+    canvas.restoreState()
+
+
 # ============================================================
 # PDF build
 # ============================================================
@@ -1070,8 +1183,8 @@ def build_pdf(metrics, paths, source_file):
         pagesize=A4,
         leftMargin=1.7 * cm,
         rightMargin=1.7 * cm,
-        topMargin=1.4 * cm,
-        bottomMargin=1.4 * cm
+        topMargin=1.65 * cm,
+        bottomMargin=1.45 * cm
     )
 
     styles = build_styles()
@@ -1151,6 +1264,15 @@ def build_pdf(metrics, paths, source_file):
         styles
     )
 
+    story.append(Spacer(1, 0.15 * cm))
+    story.append(Paragraph("15 Longest Runs", styles["Heading2"]))
+    story.append(Paragraph(
+        "The longest contiguous runs in the complete bitstream, including the repeated bit value and exact zero-based positions.",
+        styles["CustomCaption"],
+    ))
+    story.append(make_longest_runs_table(metrics))
+    story.append(Spacer(1, 0.45 * cm))
+
     story.append(PageBreak())
 
     add_figure(
@@ -1196,7 +1318,11 @@ def build_pdf(metrics, paths, source_file):
             styles
         )
 
-    doc.build(story)
+    doc.build(
+        story,
+        onFirstPage=draw_page_header_footer,
+        onLaterPages=draw_page_header_footer,
+    )
 
 
 # ============================================================
